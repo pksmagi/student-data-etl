@@ -1,0 +1,107 @@
+{
+  "name": "Student enrollment ETL",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "8d5297fe-6767-4ebe-9bfd-f9c169d61e01",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "download",
+        "fileId": {"__rl": true, "value": "", "mode": "list"},
+        "options": {}
+      },
+      "id": "8d5297fe-6767-4ebe-9bfd-f9c169d61e02",
+      "name": "Download students.csv",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "operation": "csv",
+        "binaryPropertyName": "data",
+        "options": {"headerRow": true, "includeEmptyCells": true, "enableBOM": true}
+      },
+      "id": "8d5297fe-6767-4ebe-9bfd-f9c169d61e03",
+      "name": "Extract rows",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all();\nconst fields = ['Student_ID', 'Name', 'Email', 'Phone', 'Course', 'Fee_Paid', 'City', 'Enrolled_Date'];\nfor (const item of rows) {\n  for (const field of fields) {\n    if (!Object.prototype.hasOwnProperty.call(item.json, field)) throw new Error(`Missing required column: ${field}`);\n  }\n}\nconst text = value => String(value ?? '').trim().replace(/\\s+/g, ' ');\nconst title = value => text(value).toLowerCase().replace(/\\b[a-z]/g, c => c.toUpperCase());\nreturn rows.map(item => {\n  const row = item.json;\n  const course = title(row.Course);\n  return { json: {\n    Student_ID: text(row.Student_ID).toUpperCase(),\n    Name: title(row.Name),\n    Email: text(row.Email).toLowerCase(),\n    Phone: text(row.Phone),\n    Course: course === 'Ml' ? 'Machine Learning' : course,\n    Fee_Paid: text(row.Fee_Paid).toLowerCase(),\n    City: title(row.City),\n    Enrolled_Date: text(row.Enrolled_Date)\n  } };\n});"
+      },
+      "id": "8d5297fe-6767-4ebe-9bfd-f9c169d61e04",
+      "name": "Normalize rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().filter(item => item.json.Fee_Paid === 'yes' && /^[^\\s@]+@[^\\s@.]+(?:\\.[^\\s@.]+)+$/.test(item.json.Email));"
+      },
+      "id": "8d5297fe-6767-4ebe-9bfd-f9c169d61e05",
+      "name": "Filter paid and valid email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const seen = new Set();\nreturn $input.all().filter(item => {\n  const email = item.json.Email;\n  if (seen.has(email)) return false;\n  seen.add(email);\n  return true;\n});"
+      },
+      "id": "8d5297fe-6767-4ebe-9bfd-f9c169d61e06",
+      "name": "Remove duplicate emails",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 0]
+    },
+    {
+      "parameters": {
+        "operation": "csv",
+        "binaryPropertyName": "data",
+        "options": {"fileName": "students_clean.csv", "headerRow": true}
+      },
+      "id": "8d5297fe-6767-4ebe-9bfd-f9c169d61e07",
+      "name": "Convert to CSV",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [1320, 0]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "upload",
+        "inputDataFieldName": "data",
+        "name": "students_clean.csv",
+        "driveId": {"__rl": true, "value": "My Drive", "mode": "list", "cachedResultName": "My Drive"},
+        "folderId": {"__rl": true, "value": "", "mode": "list"},
+        "options": {}
+      },
+      "id": "8d5297fe-6767-4ebe-9bfd-f9c169d61e08",
+      "name": "Upload clean CSV",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1540, 0]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {"main": [[{"node": "Download students.csv", "type": "main", "index": 0}]]},
+    "Download students.csv": {"main": [[{"node": "Extract rows", "type": "main", "index": 0}]]},
+    "Extract rows": {"main": [[{"node": "Normalize rows", "type": "main", "index": 0}]]},
+    "Normalize rows": {"main": [[{"node": "Filter paid and valid email", "type": "main", "index": 0}]]},
+    "Filter paid and valid email": {"main": [[{"node": "Remove duplicate emails", "type": "main", "index": 0}]]},
+    "Remove duplicate emails": {"main": [[{"node": "Convert to CSV", "type": "main", "index": 0}]]},
+    "Convert to CSV": {"main": [[{"node": "Upload clean CSV", "type": "main", "index": 0}]]}
+  },
+  "settings": {"executionOrder": "v1"},
+  "active": false
+}
